@@ -19,6 +19,37 @@ def load_image(path):
     return im
 
 
+def apply_patch_gaussian(img, patch_size=3, sigma=5):
+    # Convert PIL Image to NumPy array
+    img_np = np.array(img)
+
+    # Randomly choose a patch position
+    h, w, _ = img_np.shape
+    top = np.random.randint(0, h - patch_size)
+    left = np.random.randint(0, w - patch_size)
+    bottom = top + patch_size
+    right = left + patch_size
+
+    # Create the patch
+    patch = np.zeros((patch_size, patch_size, 1), dtype=np.uint8)
+
+    # Apply Gaussian noise to the patch
+    noise = np.random.normal(scale=sigma, size=(patch_size, patch_size, 3))
+    patch = np.clip(patch + noise, 0, 255).astype(np.uint8)
+
+    # Replace the patch in the original image
+    img_np[top:bottom, left:right] = patch
+
+    # Convert NumPy array back to PIL Image
+    import matplotlib.pyplot as plt
+    plt.imshow(img_np)
+    plt.gray()
+    plt.show()
+    patched_img = Image.fromarray(img_np)
+
+    return patched_img
+
+
 class ZFill:
     def __init__(self, max_height=160, max_width=50):
         self.max_height = max_height
@@ -81,16 +112,41 @@ class WidthShift:
         return img
 
 
+def spoil_centered_object(img_tensor, spoil_percentage=5, max_spoil_intensity=0.5, p_sco=0.7):
+    if random.random() > 1 - p_sco:
+        _, h, w = img_tensor.size()
+        spoil_size = int(min(h, w) * spoil_percentage / 100)
+
+        # Calculate the coordinates for the centered patch
+        top = (h - spoil_size) // 2
+        left = (w - spoil_size) // 2
+        bottom = top + spoil_size
+        right = left + spoil_size
+
+        # Generate a patch of random intensity to spoil the object
+        patch = torch.rand_like(img_tensor[:, top:bottom, left:right]) * max_spoil_intensity
+
+        # Apply the patch to the centered portion of the image
+        img_tensor[:, top:bottom, left:right] = torch.clamp(
+            img_tensor[:, top:bottom, left:right] - patch, 0, 1
+        )
+
+    return img_tensor
+
+
 def load_images(path, batch_size, domain, _drop_last=True, _shuffle=True):
     if domain == 'train':
         transform = T.Compose([
             T.ToTensor(),
             T.ConvertImageDtype(torch.float32),
-            # T.RandomRotation(degrees=2),
+            T.RandomRotation(degrees=2),
             T.RandomHorizontalFlip(),
             T.ColorJitter(brightness=0.2, contrast=0.5),
-            WidthShift(fraction=0.2),
-            HeightShift(fraction=0.2),
+            # T.Lambda(lambda x: spoil_centered_object(x, spoil_percentage=15, max_spoil_intensity=0.5)),
+            # WidthShift(fraction=0.2),
+            WidthShift(fraction=0.35),
+            # HeightShift(fraction=0.2),
+            HeightShift(fraction=0.35),
             T.Resize(size=(140, 20), antialias=True),
             ZFill(max_height=160, max_width=50),
         ])

@@ -22,8 +22,14 @@ def train_model(net, **kwargs):
     train_data = kwargs['train']
     val_data = kwargs['val']
     test_data = kwargs['test']
-    classes = kwargs['classes']
+
+    train_classes = kwargs['train_classes']
+    test_classes = kwargs['test_classes']
+
     # train_proportions = kwargs['train_proportions']
+    train_data_size = len(train_data.dataset)
+    train_batch_size = train_data.batch_size
+    train_batches_count = len(train_data)
 
     num_epochs = kwargs['epochs']
     start_epoch = kwargs['start_epoch']
@@ -32,12 +38,22 @@ def train_model(net, **kwargs):
     model_folder = kwargs['model_folder']
 
     ## Optimizer
-    learning_rate = 0.001
-    rho = 0.95
-    betas = (0.9, 0.999)
+    LR = kwargs['learning_rate']
+    LR_fine_tune = 0
+    weight_decay = kwargs['weight_decay']
+    grad_clip_norm = kwargs['grad_clip_norm']
+    # rho = 0.95
 
-    # optimizer = optim.Adadelta(net.parameters(), lr=learning_rate, rho=rho)
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate, betas=betas)
+    params_train = kwargs['params_train']
+    params_fine_tune = kwargs['params_fine_tune']
+
+    # optimizer = optim.Adadelta(net.parameters(), lr=LR, rho=rho)
+    optimizer = optim.Adam(params_train, lr=LR, weight_decay=weight_decay)
+    optimizer_fine_tune = optim.SGD(params_fine_tune, lr=LR_fine_tune, weight_decay=weight_decay)
+
+    ## Learning Rate Scheduler
+    torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.9)
+    torch.optim.lr_scheduler.StepLR(optimizer_fine_tune, step_size=5, gamma=0.9)
 
     ## Loss
     # class_weights = torch.sqrt(torch.tensor(train_proportions).reciprocal())
@@ -47,13 +63,6 @@ def train_model(net, **kwargs):
     criterion = nn.CrossEntropyLoss()
 
     for epoch in range(start_epoch, num_epochs):
-        if epoch % 5 == 0:
-            for g in optimizer.param_groups:
-                g['lr'] = g['lr'] * 0.9
-        # elif epoch > 100 and epoch % 10 == 0:
-        #     for g in optimizer.param_groups:
-        #         g['lr'] = g['lr'] * 0.95
-
         net.train()
         net.to(device)
 
@@ -66,6 +75,7 @@ def train_model(net, **kwargs):
 
             # Optimizer zero setting
             optimizer.zero_grad()
+            optimizer_fine_tune.zero_grad()
 
             # Feed-Forward
             output = net(x)
@@ -73,13 +83,15 @@ def train_model(net, **kwargs):
             loss = criterion(output, y)
             loss.backward()
 
+            torch.nn.utils.clip_grad_norm(net.parameters(), grad_clip_norm)
             optimizer.step()
+            optimizer_fine_tune.step()
 
             epoch_losses.append(loss.item())
 
-            if (batch_idx + 1) % 2 == 0:
-                print_training_logs(epoch, batch_idx * len(x), len(train_data.dataset),
-                                    100. * batch_idx / len(train_data), loss.item())
+            if (batch_idx + 1) % 8 == 0:
+                print_training_logs(epoch, batch_idx * train_batch_size, train_data_size,
+                                    100. * batch_idx / train_batches_count, loss.item())
 
         print(f'Epoch {epoch}/{num_epochs - 1}')
 
@@ -89,13 +101,19 @@ def train_model(net, **kwargs):
                 # net.to(torch.device("cpu"))
 
                 if train_data:
-                    train_acc = evaluate(train_data, net, domain='train', classes=classes, device=device)
+                    train_acc = evaluate(
+                        train_data, net, domain='train', classes=(train_classes, test_classes), device=device
+                    )
                     stats['train'] = train_acc
                 if test_data:
-                    test_acc = evaluate(test_data, net, domain='test', classes=classes, device=device)
+                    test_acc = evaluate(
+                        test_data, net, domain='test', classes=(train_classes, test_classes), device=device
+                    )
                     stats['test'] = test_acc
                 if val_data:
-                    val_acc = evaluate(val_data, net, domain='val', classes=classes, device=torch.device("cpu"))
+                    val_acc = evaluate(
+                        val_data, net, domain='val', classes=(train_classes, test_classes), device=torch.device("cpu")
+                    )
                     stats['val'] = val_acc
 
                 ckpt_path = f'{model_folder}/{epoch}.pth'
@@ -109,7 +127,7 @@ def train_model(net, **kwargs):
 
                 writer.add_scalars(main_tag='Accuracy', tag_scalar_dict=stats, global_step=epoch)
 
-        epoch_loss = sum(epoch_losses) / len(epoch_losses)
+        epoch_loss = sum(epoch_losses) / (len(epoch_losses) + 1e-5)
         writer.add_scalar("Loss/train", epoch_loss, epoch)
 
         end = time.time()

@@ -1,25 +1,33 @@
 project:
   name: "DFBS Object Classification"
-  root: "/home/sargis/Datasets/Stepan/DFBS_Classification"
-  train_id: "Default_10_AdaDelta"
+  root: "/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/Computational-Astrophysics/Sub-Object_Classification/Classification"
+  train_id: "Default_CLS_Fine_Tune_19_5_Slow_Conv"
 model:
-  load_path: # f'{checkpoints_dir}/100.pth'
+#  load_path: # f'{checkpoints_dir}/100.pth'
+#  load_path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/Computational-Astrophysics/Cloud_Service/Checkpoint/Dense_10_Focal_25_3_Final/139.pth'
+  load_path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/Computational-Astrophysics/Sub-Object_Classification/Classification/Checkpoint/Default_CLS_Combined_19/90.pth'
 training:
   use_gpu: True
+  fine_tune: True
   batch_size:
     train: 256
     test: 128
     val: 1
   epochs: 301
   start_epoch: 0
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  grad_clip_norm: 0.1
 data:
   input:
     shape: [160, 50]
   output:
-    num_classes: 10
+    num_classes:
   train:
-    path: '/home/sargis/Datasets/Stepan/DFBS_Combine/train'
+    path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/DFBS_Combine_5_High/train'
+#    path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/DFBS_Combine/train_augmented_5'
+#    path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/Combined_Dataset'
   test:
-    path: '/home/sargis/Datasets/Stepan/DFBS_Combine/test'
+    path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/DFBS_Combine_5_High/test'
   val:
     path:

@@ -7,14 +7,20 @@ import models
 import train
 
 import torch
+import torch.nn as nn
 
 
 def main(config):
+    fine_tune = config['training']['fine_tune'] or False
+
     # Training Device
     if config['training']['use_gpu']:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        print(torch.cuda.is_available())
     else:
         device = torch.device('cpu')
+
+    print('Training device:', device)
 
     # Datasets
     train_dir = config['data']['train']['path']
@@ -52,18 +58,45 @@ def main(config):
 
     # start_epoch = 6
     # load_model_path = f'{checkpoints_dir}/5.pth'
+    learning_rate = config['training']['learning_rate']
+    weight_decay = config['training']['weight_decay']
+    grad_clip_norm = config['training']['grad_clip_norm']
 
     train_data, train_classes, train_proportions = load_data.load_images(train_dir, train_batch_size, 'train')
-    val_data, val_classes, _ = load_data.load_images(val_dir, val_batch_size, 'val', _drop_last=False) if val_dir else (None, None, None)
-    test_data, test_classes, _ = load_data.load_images(test_dir, test_batch_size, 'test', _drop_last=False) if test_dir else (None, None, None)
+    val_data, val_classes, _ = load_data.load_images(
+        val_dir, val_batch_size, 'val', _drop_last=False) if val_dir else (None, None, None)
+    test_data, test_classes, _ = load_data.load_images(
+        test_dir, test_batch_size, 'test', _drop_last=False) if test_dir else (None, None, None)
 
-    print('\nTraining started:')
+    params_train = []
+    params_fine_tune = []
 
-    net = models.Model(num_classes=num_classes, input_shape=input_shape, arch='default').to(device)
+    if fine_tune:
+        net = models.Model(num_classes=19, input_shape=input_shape, arch='default')
+
+        if load_model_path:
+            net.load_state_dict(torch.load(load_model_path))
+
+        net.classifier.fc2 = nn.Linear(
+            in_features=net.classifier.fc2.in_features,
+            out_features=num_classes
+        )
+
+        for name, param in net.named_parameters():
+            if 'classifier.fc' in name or 'classifier.conv4' in name or 'classifier.bn4' in name:
+                params_fine_tune.append(param)
+            else:
+                params_train.append(param)
+
+    else:
+        net = models.Model(num_classes=num_classes, input_shape=input_shape, arch='default')
+
+        if load_model_path:
+            net.load_state_dict(torch.load(load_model_path))
+
+    net.to(device)
     print(net)
-
-    if load_model_path:
-        net.load_state_dict(torch.load(load_model_path))
+    print('\nTraining started:')
 
     net = train.train_model(
         net,
@@ -72,10 +105,16 @@ def main(config):
         test=test_data,
         epochs=num_epochs,
         start_epoch=start_epoch,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        grad_clip_norm=grad_clip_norm,
+        params_train=params_train,
+        params_fine_tune=params_fine_tune,
         device=device,
         model_folder=checkpoints_dir,
         train_id=train_id,
-        classes=test_classes,
+        train_classes=train_classes,
+        test_classes=test_classes,
         train_proportions=train_proportions
     )
 

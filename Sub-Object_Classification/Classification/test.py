@@ -17,6 +17,8 @@ def evaluate(dataloader, model, domain='test', classes=None, device=torch.device
     correct = 0
     total = 0
 
+    train_classes, test_classes = classes
+
     with torch.no_grad():
         y_preds = []
         y_gts = []
@@ -40,7 +42,7 @@ def evaluate(dataloader, model, domain='test', classes=None, device=torch.device
     print(f'Accuracy of the network on the {domain} images: {accuracy} %')
 
     if domain == 'test':
-        print(classification_report(y_gts, y_preds, zero_division=0, target_names=classes))
+        print(classification_report(y_gts, y_preds, zero_division=0, target_names=train_classes))
         # print(classes)
         # Output the classification results with their quantities for the specified class
         # aaa = torch.Tensor(y_preds)[torch.where(torch.Tensor(y_gts) == classes['C Ba'])]
