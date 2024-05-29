@@ -1,9 +1,8 @@
-from os import mkdir, makedirs
+from os import mkdir
 from shutil import rmtree
 
-import numpy as np
+from torch import save as torch_save
 import pandas as pd
-from PIL import Image
 
 
 def print_training_logs(arg1, arg2, arg3, arg4, arg5):
@@ -60,3 +59,15 @@ def make_directory(path):
     current_path += folders[-1]
     rmtree(current_path, ignore_errors=True)
     mkdir(current_path)
+
+
+def save_best_parameters(accuracy, best_acc, model_ckpt, optim_ckpt, epoch, model_dir):
+    #####################################################
+    if accuracy >= best_acc['value']:
+        best_acc['value'] = accuracy
+        best_acc['epoch'] = epoch
+        best_acc['model_ckpt'] = model_ckpt
+        best_acc['optim_ckpt'] = optim_ckpt
+
+        torch_save(best_acc, f'{model_dir}/best_acc_{accuracy}_epoch_{epoch}.pth')
+    #####################################################

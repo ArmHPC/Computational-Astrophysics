@@ -1,10 +1,11 @@
 import argparse
+from tqdm import tqdm
 import torch.optim
+import numpy as np
+from collections import Counter
 
 import load_data
 import models
-
-from sklearn.metrics import classification_report
 
 
 # Testing Device
@@ -14,63 +15,81 @@ test_device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 input_shape = (160, 50)
 
 
-def evaluate(dataloader, model, domain='test', classes=None, device=torch.device(test_device)):
-    correct = 0
-    total = 0
+def infer_evaluate(
+        dataloader, model,
+        device=torch.device(test_device),
+        threshold=None,
+        classes=None,
+        save_dir=None,
+        load_saved=False
+):
+    if load_saved:
+        y_indices = np.load(f'{save_dir}/indices.npy')
+        y_preds = np.load(f'{save_dir}/preds.npy')
 
-    with torch.no_grad():
+        print('Predictions were loaded from previously saved file...\n')
+
+    else:
         y_preds = []
-        y_gts = []
+        y_indices = []
 
-        for batch_idx, (x, y) in enumerate(dataloader):
-            x = x.to(device)
-            y = y.to(device)
+        with torch.no_grad():
+            for batch_idx, (x, _) in enumerate(tqdm(dataloader)):
+                x = x.to(device)
 
-            # calculate outputs by running images through the network
-            outputs = model(x)
+                # calculate outputs by running images through the network
+                outputs = model(x)
 
-            # _, predicted = torch.max(outputs.data, dim=1)
-            predicted = torch.argmax(outputs.data, dim=1)
-            total += y.size(0)
-            correct += (predicted == y).sum().item()
+                predicted, indices = torch.max(torch.softmax(outputs.data, dim=1), dim=1)
+                y_preds.extend(predicted.cpu().numpy())
+                y_indices.extend(indices.cpu().numpy())
 
-            y_preds.extend(predicted.cpu().numpy())
-            y_gts.extend(y.cpu().numpy())
+        y_indices = np.array(y_indices)
+        y_preds = np.array(y_preds)
 
-    accuracy = round(100 * correct / total, ndigits=2)
-    print(f'Accuracy of the network on the {domain} images: {accuracy} %')
+        np.save(f'{save_dir}/indices', np.array(y_indices))
+        np.save(f'{save_dir}/preds', np.array(y_preds))
 
-    if domain == 'test':
-        print(classification_report(y_gts, y_preds, zero_division=0, target_names=classes))
-        print(classes)
-        # Output the classification results with their quantities for the specified class
-        aaa = torch.Tensor(y_preds)[torch.where(torch.Tensor(y_gts) == classes['C Ba'])]
-        print(aaa.unique(return_counts=True))
+    if threshold:
+        classes['Other'] = -1
+        for i, prob in enumerate(y_preds):
+            if prob < threshold:
+                y_indices[i] = -1
 
-    if domain == 'inference':
-        return predicted
-    return accuracy
+    label_predictions = [list(classes.keys())[list(classes.values()).index(num)] for num in y_indices]
+    class_counts = dict(Counter(label_predictions))
+
+    for label in classes.keys():
+        if label not in class_counts:
+            class_counts[label] = 0
+
+    return class_counts
 
 
 def infer(device=test_device):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_root', default='data/Inference/Subtypes/19_2/images')
-    parser.add_argument('--ckpt_path',
-                        default='Classification_PyTorch/Checkpoint/Dense_6_High_Focal_25_3_Final/136.pth')
-    parser.add_argument('--num_classes', default=10, choices=(5, 6, 10))
-    parser.add_argument('--batch_size', default=128)
 
-    # parser.add_argument('--class_column', default='Sp type', choices=('Sp type', 'Cl'))
-    # parser.add_argument('--output_path')
-    # parser.add_argument('--fits_path', default=None)
-    # parser.add_argument('--headers_path', default=None)
+    parser.add_argument(
+        '--data_root',
+        default='/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/DFBS/Inference_data/4m/data'
+    )
+    parser.add_argument(
+        '--ckpt_path',
+        default='./model/Final_Fine_Tune_10_3_Focal_loss_Augment_15_WH_25/best_acc_95.8_epoch_126_Infer.pth'
+    )
+    parser.add_argument('--num_classes', default='3', choices=('3', '5', '6', '10'))
+    parser.add_argument('--batch_size', default=128)
+    parser.add_argument('--threshold', default=None)
+    parser.add_argument('--load_saved', action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
 
     infer_dir = args.data_root
     checkpoint_path = args.ckpt_path
-    num_classes = args.num_classes
+    num_classes = int(args.num_classes)
     batch_size = args.batch_size
+    threshold = float(args.threshold) if args.threshold else None
+    load_saved = args.load_saved or False
 
     # checkpoint_path = './Checkpoint/ResNet/485_64_63.pth'
     # checkpoint_path = './Checkpoint/ViT_10/225_70_68.5.pth'
@@ -87,13 +106,29 @@ def infer(device=test_device):
     # checkpoint_path = './Checkpoint/Orig_6_High/105.pth'
     # data_root = '/home/sargis/Datasets/Stepan/DFBS_Combine_6_High'
 
-    infer_data = load_data.load_images(path=infer_dir, batch_size=batch_size, domain='inference', _drop_last=False)
+    infer_data = load_data.load_images(
+        path=infer_dir, batch_size=batch_size, domain='inference', _drop_last=False, _shuffle=True
+    )
 
     net = models.Model(num_classes=num_classes, input_shape=input_shape).to(device)
-    net.load_state_dict(torch.load(checkpoint_path))
+
+    ckpt_data = torch.load(checkpoint_path)
+    test_classes = ckpt_data['classes']
+    net.load_state_dict(ckpt_data['ckpt'])
     net.eval()
 
-    evaluate(dataloader=infer_data, model=net, domain='inference', device=device)
+    print('Evaluation started:')
+    predictions = infer_evaluate(
+        dataloader=infer_data,
+        model=net,
+        device=device,
+        classes=test_classes,
+        threshold=threshold,
+        save_dir=f'{infer_dir}/..',
+        load_saved=load_saved
+    )
+    print('Threshold:', threshold)
+    print(predictions)
 
 
 if __name__ == "__main__":

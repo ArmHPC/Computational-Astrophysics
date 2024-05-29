@@ -1,23 +1,28 @@
 project:
   name: "DFBS Object Classification"
   root: "/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/Computational-Astrophysics/Sub-Object_Classification/Classification"
-  train_id: "Default_CLS_Fine_Tune_19_5_Slow_Conv"
+  train_id: "Final_Fine_Tune_10_5_Focal_loss_Augment_15_WH_25"
 model:
 #  load_path: # f'{checkpoints_dir}/100.pth'
-#  load_path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/Computational-Astrophysics/Cloud_Service/Checkpoint/Dense_10_Focal_25_3_Final/139.pth'
-  load_path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/Computational-Astrophysics/Sub-Object_Classification/Classification/Checkpoint/Default_CLS_Combined_19/90.pth'
+  load_path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/Computational-Astrophysics/Cloud_Service/Checkpoint/Dense_10_Focal_25_3_Final/139.pth'
 training:
   use_gpu: True
   fine_tune: True
+#  fine_tune: False
   batch_size:
     train: 256
     test: 128
     val: 1
   epochs: 301
   start_epoch: 0
-  learning_rate: 0.0001
+  learning_rate: 0.0005
   weight_decay: 0.0001
   grad_clip_norm: 0.1
+  min_ckpt_acc: 85
+  loss:
+    name: 'Focal'
+    alpha: 0.25
+    gamma: 3
 data:
   input:
     shape: [160, 50]
@@ -25,9 +30,11 @@ data:
     num_classes:
   train:
     path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/DFBS_Combine_5_High/train'
-#    path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/DFBS_Combine/train_augmented_5'
+#    path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/AstroDataset/Train_augmented'
 #    path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/Combined_Dataset'
+#    path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/AstroDataset/Train'
   test:
     path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/DFBS_Combine_5_High/test'
+#    path: '/media/sargis/Data/Stepan_Home/Datasets/Stepan_Datasets/AstroDataset/Test'
   val:
     path:
